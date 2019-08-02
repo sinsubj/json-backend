@@ -12,7 +12,7 @@ const server = jsonServer.create();
 const router = jsonServer.router("./db.json");
 
 // read and json-parse the db
-const userdb = JSON.parse(fs.readFileSync("./users.json", "UTF-8"));
+let userdb = JSON.parse(fs.readFileSync("./db.json", "UTF-8"));
 
 // set default middlewares (logger, static, cors, and no-cache)
 // We have to put body Parser function on top of routes. Otherwise we may come on this error.
@@ -37,6 +37,7 @@ function verifyToken(token) {
 
 // Check if the user exists in database
 function isAuthenticated({ email, password }) {
+  console.log("isAuthenticated; userdb.users:", userdb.users);
   return (
     userdb.users.findIndex(
       user => user.email === email && user.password === password
@@ -48,6 +49,8 @@ function isAuthenticated({ email, password }) {
 // in the database and then create and send a JWT token to the user
 server.post("/auth/login", (req, res) => {
   const { email, password } = req.body;
+  console.log("/auth/login; req.body:", req.body);
+
   if (isAuthenticated({ email, password }) === false) {
     const status = 401;
     const message = "Incorrect email or password";
@@ -57,8 +60,9 @@ server.post("/auth/login", (req, res) => {
   const authenticationToken = createToken({ email, password });
   const userIndex = userdb.users.findIndex(user => user.email === email);
   const userData = userdb.users[userIndex];
+  console.log("/auth/login; userData", userData);
   res.status(200).json({
-    user: { authenticationToken, userData }
+    user: { authenticationToken, ...userData }
   });
 });
 
@@ -68,28 +72,35 @@ server.post("/auth/login", (req, res) => {
  * except the previous route since this is the one we use to login the user
  */
 server.use(/^(?!\/auth).*$/, (req, res, next) => {
-  console.log(req.headers);
+  console.log("/auth; req: ", req.headers);
   if (
     req.headers.authorization === undefined ||
     req.headers.authorization.split(" ")[0] !== "Bearer"
   ) {
+    const headers = req.headers;
     const status = 401;
     const message = "Error in authorization format";
-    res.status(status).json({ status, message });
+    console.log("/auth;", message);
+    res.status(status).json({ headers, status, message });
     return;
   }
   try {
     verifyToken(req.headers.authorization.split(" ")[1]);
+    console.log("/auth; token verified; req.body: ", req.body);
+
+    // Reload user data
+    userdb = JSON.parse(fs.readFileSync("./db.json", "UTF-8"));
     next();
   } catch (err) {
     const status = 401;
     const message = "Error access_token is revoked";
+    console.log("/auth;", message);
     res.status(status).json({ status, message });
   }
 });
 
-// Finally mount json-server then run server on port 3000
-server.use("/api", router);
+// Finally mount json-server then run server on the specified port
+server.use(router);
 server.listen(2019, () => {
   console.log("Run Auth API Server");
 });
